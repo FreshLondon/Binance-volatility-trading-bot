@@ -489,7 +489,7 @@ def sell_coins():
                 session_profit = session_profit + (PriceChange-(buyFee+sellFee))
                 profit_history = profit_history + PriceChange-(buyFee+sellFee)
                 profit_history_all = profit_history_all + (QUANTITY * (PriceChange-(buyFee+sellFee)) / 100)
-                profit_total = profit_total + profit
+                profit_total = round(profit_total + profit, decimals())
                 if {BuyPrice} >= {LastPrice}:
                     trade_losses = trade_losses +1
                 else:
@@ -536,7 +536,7 @@ def update_bot_stats():
     if not TEST_MODE:
 	    bot_stats = {
 	        'profitPercent': profit_history,
-            'profitPercentAll': round(profit_history_all, 8),
+            'profitPercentAll': profit_history_all,
             'profitTotal': profit_total,
 	        'tradeWins': trade_wins,
 	        'tradeLosses': trade_losses,
