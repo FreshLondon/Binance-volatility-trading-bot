@@ -71,11 +71,27 @@ session_profit = 0
 unrealised_percent = 0
 unrealised_percent_delay = 0
 
-global profit_history
+global profit_history, trade_wins, trade_losses, profit_history_all, profit_total
 try:
     profit_history
 except NameError:
     profit_history = 0      # or some other default value.
+try:
+    profit_history_all
+except NameError:
+    profit_history_all = 0      # or some other default value.
+try:
+    profit_total
+except NameError:
+    profit_total = 0      # or some other default value.
+try:
+    trade_wins
+except NameError:
+    trade_wins = 0      # or some other default value.
+try:
+    trade_losses
+except NameError:
+    trade_losses = 0      # or some other default value.
 
 
 # print with timestamps
@@ -240,23 +256,34 @@ def external_signals():
 
 
 def balance_report():
-    global profit_history, unrealised_percent
+    global profit_history, unrealised_percent, trade_wins, trade_losses
+    DECIMALS = int(decimals())
     INVESTMENT_TOTAL = (QUANTITY * TRADE_SLOTS)
     CURRENT_EXPOSURE = (QUANTITY * len(coins_bought))
-    TOTAL_GAINS = ((QUANTITY * session_profit) / 100)
-    NEW_BALANCE = (INVESTMENT_TOTAL + TOTAL_GAINS)
-    INVESTMENT_GAIN = (TOTAL_GAINS / INVESTMENT_TOTAL) * 100
-    PROFIT_HISTORY = profit_history
+    INVESTMENT_TOTAL  = round(INVESTMENT_TOTAL, DECIMALS)
+    CURRENT_EXPOSURE = round(CURRENT_EXPOSURE, DECIMALS)
+    TOTAL_GAINS = round((QUANTITY * session_profit) / 100, DECIMALS)
+    # NEW_BALANCE = (INVESTMENT_TOTAL + TOTAL_GAINS)
+    INVESTMENT_GAIN = round((TOTAL_GAINS / INVESTMENT_TOTAL) * 100, 2)
+    SESSION_PROFIT =  round(session_profit, 2)
+    PROFIT_HISTORY = round(profit_history, 2)
+    PROFIT_HISTORY_ALL = round(profit_history_all, 2)
+    PROFIT_TOTAL = round(profit_total, DECIMALS)
     # truncating some of the above values to the correct decimal places before printing
-    INVESTMENT_TOTAL  = round(INVESTMENT_TOTAL,decimals() )
-    CURRENT_EXPOSURE = round(CURRENT_EXPOSURE,decimals() )
+
+    
 
     if len(coins_bought) > 0:
-        UNREALISED_PERCENT = unrealised_percent/len(coins_bought)
+        UNREALISED_PERCENT = round(unrealised_percent/len(coins_bought), 2)
     else:
         UNREALISED_PERCENT = 0
+    if (trade_wins > 0) and (trade_losses > 0):
+        WIN_LOSS_PERCENT = round((trade_wins / trade_losses) * 100, 2)
+        
+    else:
+        WIN_LOSS_PERCENT = 100
 
-    print(f'Trade slots: {len(coins_bought)}/{TRADE_SLOTS} ({float(CURRENT_EXPOSURE):g}/{float(INVESTMENT_TOTAL):g}{PAIR_WITH}) | Open trades: {UNREALISED_PERCENT:.2f}% | Closed trades: {session_profit:.2f}% (all time: {PROFIT_HISTORY:.2f}%) | Session profit: {INVESTMENT_GAIN:.2f}% ({TOTAL_GAINS:.{decimals()}f}{PAIR_WITH})')
+    print(f'Trade slots: {len(coins_bought)}/{TRADE_SLOTS} ({float(CURRENT_EXPOSURE):g}/{float(INVESTMENT_TOTAL):g}{PAIR_WITH}) @ {float(UNREALISED_PERCENT):g}% avg | Closed trades: {float(SESSION_PROFIT):g}% (all time: {float(PROFIT_HISTORY):g}%) | W/L: {trade_wins}/{trade_losses} ({float(WIN_LOSS_PERCENT):g}%) | Session profit: {float(INVESTMENT_GAIN):g}% ({float(TOTAL_GAINS):g}{PAIR_WITH}) | All time profit {float(PROFIT_HISTORY_ALL):g}% ({float(PROFIT_TOTAL):g}{PAIR_WITH})')
     unrealised_percent_calc()
     return
 
@@ -395,20 +422,17 @@ def buy():
                 # Log trade
                 write_log(f"Buy : {volume[coin]} {coin} - {last_price[coin]['price']}")
 
-
     return orders, last_price, volume
 
 
 def sell_coins():
     '''sell coins that have reached the STOP LOSS or TAKE PROFIT threshold'''
-    global hsp_head, session_profit, profit_history,coin_order_id
+    global hsp_head, session_profit, profit_history, coin_order_id, trade_wins, trade_losses, profit_history_all, profit_total
     last_price = get_price(False) # don't populate rolling window
     #last_price = get_price(add_to_historical=True) # don't populate rolling window
     coins_sold = {}
 
     for coin in list(coins_bought):
-
-
         # define stop loss and take profit
         TP = float(coins_bought[coin]['bought_at']) + (float(coins_bought[coin]['bought_at']) * coins_bought[coin]['take_profit']) / 100
         SL = float(coins_bought[coin]['bought_at']) + (float(coins_bought[coin]['bought_at']) * coins_bought[coin]['stop_loss']) / 100
@@ -432,8 +456,8 @@ def sell_coins():
         if LastPrice < SL or LastPrice > TP and not USE_TRAILING_STOP_LOSS:
             print(f"{txcolors.SELL_PROFIT if PriceChange >= 0. else txcolors.SELL_LOSS}TP or SL reached, selling {coins_bought[coin]['volume']} {coin} - {float(BuyPrice):g} - {float(LastPrice):g} : {PriceChange-(buyFee+sellFee):.2f}% Est: {(QUANTITY*(PriceChange-(buyFee+sellFee)))/100:.{decimals()}f} {PAIR_WITH}{txcolors.DEFAULT}")
 
-#             if coins_bought[coin]['orderid'] is coin_order_id:
-#                 print(f"this coin has an order ID of {coins_bought[coin]['orderid']}")
+            # if coins_bought[coin]['orderid'] is coin_order_id:
+            # print(f"this coin has an order ID of {coins_bought[coin]['orderid']}")
 
             # try to create a real order
             try:
@@ -451,9 +475,9 @@ def sell_coins():
 
             # run the else block if coin has been sold and create a dict for each coin sold
             else:
-#                 coins_sold[coin]['orderid'] = coins_bought[coin]['orderid']
+                # coins_sold[coin]['orderid'] = coins_bought[coin]['orderid']
                 coins_sold[coin] = coins_bought[coin]
-#                 print(f"{coins_sold[coin]}")
+                # print(f"{coins_sold[coin]}")
                 # coins_sold[coin] = coins_bought[coin]['orderid']
 
                 # prevent system from buying this coin for the next TIME_DIFFERENCE minutes
@@ -463,7 +487,14 @@ def sell_coins():
                 profit = ((LastPrice - BuyPrice) * coins_sold[coin]['volume']) * (1-(buyFee + sellFee))
                 write_log(f"Sell: {coins_sold[coin]['volume']} {coin} - {BuyPrice} - {LastPrice} Profit: {profit:.{decimals()}f} {PAIR_WITH} ({PriceChange-(buyFee+sellFee):.2f}%)")
                 session_profit = session_profit + (PriceChange-(buyFee+sellFee))
-                profit_history = profit_history + (PriceChange-(buyFee+sellFee))
+                profit_history = profit_history + PriceChange-(buyFee+sellFee)
+                profit_history_all = profit_history_all + (QUANTITY * (PriceChange-(buyFee+sellFee)) / 100)
+                profit_total = profit_total + profit
+                if {BuyPrice} >= {LastPrice}:
+                    trade_losses = trade_losses +1
+                else:
+                 trade_wins = trade_wins +1
+                update_bot_stats()
 
             continue
 
@@ -475,14 +506,12 @@ def sell_coins():
     if hsp_head == 1 and len(coins_bought) == 0: print(f"No trade slots are currently in use")
 
     return coins_sold
-#     return coin_order_id
 
 
 def update_portfolio(orders, last_price, volume):
     '''add every coin bought to our portfolio for tracking/selling later'''
-    global profit_history
 
-#     print(orders)
+    #     print(orders)
     for coin in orders:
 
         coins_bought[coin] = {
@@ -499,11 +528,23 @@ def update_portfolio(orders, last_price, volume):
         with open(coins_bought_file_path, 'w') as file:
             json.dump(coins_bought, file, indent=4)
 
-        #save session info for through session portability
-        with open(profit_history_file_path, 'w') as file:
-            json.dump(profit_history, file, indent=4)
-
         print(f'Order for {orders[coin][0]["symbol"]} with ID {orders[coin][0]["orderId"]} placed and saved to file.')
+
+
+def update_bot_stats():
+    global profit_history, trade_wins, trade_losses, profit_history_all, profit_total
+    if not TEST_MODE:
+	    bot_stats = {
+	        'profitPercent': profit_history,
+            'profitPercentAll': round(profit_history_all, 8),
+            'profitTotal': profit_total,
+	        'tradeWins': trade_wins,
+	        'tradeLosses': trade_losses,
+	    }
+
+	    #save session info for through session portability
+	    with open(bot_stats_file_path, 'w') as file:
+	        json.dump(bot_stats, file, indent=4)
 
 
 def remove_from_portfolio(coins_sold):
@@ -521,25 +562,11 @@ def remove_from_portfolio(coins_sold):
                 break
 
 
-
-
-#         coins_bought_new = list(filter(lambda ID : (coin['orderid'] != ID) , coins_bought))
-
-
-
-#         if coins_bought[coin]['orderid'] == ID:
-#             print(f"found {coin} with orderid {coins_sold[coin]['orderid']}")
-#             coins_bought.pop(coin)
-#             print(f"removed {ID}")
-
-#         with open(coins_bought_file_path, 'w') as file:
-#             json.dump(coins_bought_new, file, indent=4)
-
-
 def write_log(logline):
     timestamp = datetime.now().strftime("%d/%m %H:%M:%S")
     with open(LOG_FILE,'a+') as f:
         f.write(timestamp + ' ' + logline + '\n')
+
 
 def unrealised_percent_calc():
     global unrealised_percent_delay, unrealised_percent
@@ -582,7 +609,7 @@ if __name__ == '__main__':
 
     # Load system vars
     TEST_MODE = parsed_config['script_options']['TEST_MODE']
-#     LOG_TRADES = parsed_config['script_options'].get('LOG_TRADES')
+    #     LOG_TRADES = parsed_config['script_options'].get('LOG_TRADES')
     LOG_FILE = parsed_config['script_options'].get('LOG_FILE')
     DEBUG_SETTING = parsed_config['script_options'].get('DEBUG')
     AMERICAN_USER = parsed_config['script_options'].get('AMERICAN_USER')
@@ -638,12 +665,19 @@ if __name__ == '__main__':
 
     # The below mod was stolen and altered from GoGo's fork, a nice addition for keeping a historical history of profit across multiple bot sessions.
     # profit_history is calculated in %, apparently: "this is inaccurate if QUANTITY is not the same!"
-    profit_history_file_path = 'profit_history.json'
+    bot_stats_file_path = 'bot_stats.json'
 
-    if os.path.isfile(profit_history_file_path) and os.stat(profit_history_file_path).st_size!= 0:
-       json_file=open(profit_history_file_path)
-       profit_history=json.load(json_file)
-       json_file.close()
+    if os.path.isfile(bot_stats_file_path) and os.stat(bot_stats_file_path).st_size!= 0:
+        with open(bot_stats_file_path) as file:
+            bot_stats = json.load(file)
+            # load bot stats:
+            profit_history = bot_stats['profitPercent']
+            profit_history_all = bot_stats['profitPercentAll']
+            profit_total = bot_stats['profitTotal']
+            trade_wins = bot_stats['tradeWins']
+            trade_losses = bot_stats['tradeLosses']
+
+
 
     # rolling window of prices; cyclical queue
     historical_prices = [None] * (TIME_DIFFERENCE * RECHECK_INTERVAL)
@@ -668,6 +702,8 @@ if __name__ == '__main__':
             print('WARNING: test mode is disabled in the configuration, you are using live funds.')
             print('WARNING: Waiting 10 seconds before live trading as a security measure!')
             time.sleep(10)
+    else:
+        print('Test mode enabled, this session will not permanently modify historical bot stats.')
 
     signals = glob.glob("signals/*.exs")
     for filename in signals:
@@ -705,3 +741,4 @@ if __name__ == '__main__':
         update_portfolio(orders, last_price, volume)
         coins_sold = sell_coins()
         remove_from_portfolio(coins_sold)
+        update_bot_stats()
